@@ -1,7 +1,6 @@
 """
-Lead Generation System - Streamlit Cloud Optimized
-With Email & Social Media Extraction
-2-Step Process: Google Maps + Website Scraping
+Lead Generation System - Production Ready
+Optimized for Streamlit Cloud & Render Deployment
 """
 
 import streamlit as st
@@ -26,6 +25,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import logging
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 # Page Configuration
 st.set_page_config(
     page_title="Lead Generation System",
+    page_icon="🎯",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -49,7 +50,7 @@ if 'extraction_stats' not in st.session_state:
     st.session_state.extraction_stats = {}
 
 # ============================================
-# ERROR LOGGING UTILITY
+# ERROR LOGGING
 # ============================================
 
 def log_error(error_type, message, details=None):
@@ -74,15 +75,17 @@ def display_error_log():
                     st.caption(f"   Details: {error['details']}")
 
 # ============================================
-# WEBDRIVER INITIALIZATION (CACHED)
+# WEBDRIVER INITIALIZATION (NO CACHING - FIXES SESSION ERROR)
 # ============================================
 
-@st.cache_resource
 def get_chrome_driver():
-    """Initialize Chrome driver for Docker/Render deployment"""
+    """
+    Initialize Chrome driver - creates FRESH instance each time
+    This prevents 'invalid session id' errors
+    """
     options = Options()
     
-    # Essential options for Docker
+    # Essential options for deployment
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -92,21 +95,39 @@ def get_chrome_driver():
     options.add_argument("--disable-features=VizDisplayCompositor")
     options.add_argument("--single-process")
     options.add_argument("--remote-debugging-port=9222")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--ignore-certificate-errors")
     
     # User agent
     options.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    
     try:
-        # For Docker/Render, chromedriver is in /usr/local/bin/
-        service = Service(executable_path="/usr/local/bin/chromedriver")
+        # Detect environment and use appropriate path
+        if os.path.exists("/usr/bin/chromedriver"):
+            # Streamlit Cloud or Chromium installation
+            service = Service(executable_path="/usr/bin/chromedriver")
+            logger.info("Using chromedriver from /usr/bin/")
+        elif os.path.exists("/usr/local/bin/chromedriver"):
+            # Render/Docker with Chrome
+            service = Service(executable_path="/usr/local/bin/chromedriver")
+            logger.info("Using chromedriver from /usr/local/bin/")
+        else:
+            # Fallback to system PATH
+            service = Service()
+            logger.info("Using chromedriver from system PATH")
+        
         driver = webdriver.Chrome(service=service, options=options)
         driver.set_page_load_timeout(60)
         driver.implicitly_wait(10)
         logger.info("✅ Chrome driver initialized successfully")
         return driver
+        
     except Exception as e:
         logger.error(f"❌ Failed to initialize Chrome driver: {str(e)}")
-        st.error(f"Chrome driver initialization failed: {str(e)}")
         return None
 
 # ============================================
@@ -114,12 +135,11 @@ def get_chrome_driver():
 # ============================================
 
 def extract_emails_from_text(text):
-    """Extract email addresses from text with validation"""
+    """Extract email addresses from text"""
     try:
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         emails = re.findall(email_pattern, text)
         
-        # Filter out fake/placeholder emails
         fake_patterns = [
             'example.com', 'domain.com', 'test.com', 'sample.com', 
             'yoursite.com', 'yourdomain.com', 'email.com', 'mail.com', 
@@ -139,7 +159,7 @@ def extract_emails_from_text(text):
         return []
 
 def extract_social_media_links(soup, base_url):
-    """Extract social media profile links with error handling"""
+    """Extract social media profile links"""
     social_platforms = {
         'facebook': ['facebook.com', 'fb.com'],
         'instagram': ['instagram.com'],
@@ -173,11 +193,11 @@ def extract_social_media_links(soup, base_url):
         
         return found_social
     except Exception as e:
-        log_error("SOCIAL_EXTRACTION", f"Failed to extract social media", str(e))
+        log_error("SOCIAL_EXTRACTION", "Failed to extract social media", str(e))
         return found_social
 
 def scrape_website_for_contact_info(website_url, business_name="Unknown", timeout=8):
-    """Scrape website to find email and social media links"""
+    """Scrape website for email and social media"""
     result = {
         'emails': [],
         'social_media': {},
@@ -297,15 +317,6 @@ def scrape_website_for_contact_info(website_url, business_name="Unknown", timeou
 # UTILITY FUNCTIONS
 # ============================================
 
-def get_random_user_agent():
-    """Return random user agent"""
-    user_agents = [
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    ]
-    return random.choice(user_agents)
-
 def extract_text_safe(driver, xpath, attribute=None):
     """Safely extract text from element"""
     try:
@@ -319,7 +330,7 @@ def extract_text_safe(driver, xpath, attribute=None):
         return "N/A"
 
 def extract_phone_number(driver, business_name="Unknown"):
-    """Extract phone number with multiple fallback methods"""
+    """Extract phone number"""
     phone_xpaths = [
         "//button[contains(@data-item-id, 'phone')]",
         "//button[contains(@aria-label, 'Phone')]",
@@ -352,7 +363,7 @@ def extract_phone_number(driver, business_name="Unknown"):
     return "N/A"
 
 def extract_address(driver, business_name="Unknown"):
-    """Extract address with fallback methods"""
+    """Extract address"""
     address_xpaths = [
         "//button[contains(@data-item-id, 'address')]",
         "//button[contains(@aria-label, 'Address')]",
@@ -377,7 +388,7 @@ def extract_address(driver, business_name="Unknown"):
     return "N/A"
 
 def extract_website(driver, business_name="Unknown"):
-    """Extract website with fallback methods"""
+    """Extract website"""
     website_xpaths = [
         "//a[contains(@data-item-id, 'authority')]",
         "//a[contains(@aria-label, 'Website')]",
@@ -396,7 +407,7 @@ def extract_website(driver, business_name="Unknown"):
     return "N/A"
 
 def scroll_results_panel(driver, panel, max_scrolls=8):
-    """Intelligently scroll to load all results"""
+    """Scroll to load all results"""
     scroll_count = 0
     last_height = driver.execute_script("return arguments[0].scrollHeight", panel)
     no_change_count = 0
@@ -429,9 +440,11 @@ def scroll_results_panel(driver, panel, max_scrolls=8):
 
 def scrape_google_maps_real(keyword, location, max_results=10, extract_contact=True, progress_callback=None):
     """
-    Production-ready Google Maps scraper for Streamlit Cloud
+    Production-ready Google Maps scraper
+    Creates fresh driver instance to prevent session errors
     """
     businesses = []
+    driver = None  # Initialize as None
     stats = {
         'total_found': 0,
         'successfully_extracted': 0,
@@ -442,20 +455,19 @@ def scrape_google_maps_real(keyword, location, max_results=10, extract_contact=T
         'social_found': 0
     }
     
-    # Clear previous error log
     st.session_state.error_log = []
     
-    # Get cached driver
-    if progress_callback:
-        progress_callback("🔧 Initializing browser (cached)...")
-    
-    driver = get_chrome_driver()
-    
-    if driver is None:
-        error_msg = "❌ Failed to initialize Chrome driver.\n\nMake sure packages.txt contains:\nchromium\nchromium-driver"
-        return pd.DataFrame(), error_msg, stats
-    
     try:
+        # Get FRESH driver instance
+        if progress_callback:
+            progress_callback("🔧 Initializing Chrome browser...")
+        
+        driver = get_chrome_driver()
+        
+        if driver is None:
+            error_msg = "❌ Failed to initialize Chrome driver.\n\nCheck deployment configuration."
+            return pd.DataFrame(), error_msg, stats
+        
         # Construct search URL
         search_query = f"{keyword} in {location}".replace(" ", "+")
         url = f"https://www.google.com/maps/search/{search_query}"
@@ -465,7 +477,7 @@ def scrape_google_maps_real(keyword, location, max_results=10, extract_contact=T
         
         try:
             driver.get(url)
-            time.sleep(random.uniform(4, 6))  # Respectful delay
+            time.sleep(random.uniform(4, 6))
         except TimeoutException:
             error_msg = "⏱️ Google Maps page load timeout. Check internet connection."
             log_error("PAGE_TIMEOUT", "Failed to load Google Maps", url)
@@ -495,7 +507,7 @@ def scrape_google_maps_real(keyword, location, max_results=10, extract_contact=T
             except TimeoutException:
                 continue
             except Exception as e:
-                log_error("PANEL_LOCATE", f"Error finding panel", str(e))
+                log_error("PANEL_LOCATE", "Error finding panel", str(e))
                 continue
         
         if not panel:
@@ -527,7 +539,7 @@ def scrape_google_maps_real(keyword, location, max_results=10, extract_contact=T
                     business_elements = elements
                     break
             except Exception as e:
-                log_error("ELEMENT_FIND", f"Error finding businesses", str(e))
+                log_error("ELEMENT_FIND", "Error finding businesses", str(e))
                 continue
         
         if not business_elements:
@@ -566,7 +578,7 @@ def scrape_google_maps_real(keyword, location, max_results=10, extract_contact=T
                 time.sleep(0.6)
                 
                 driver.execute_script("arguments[0].click();", link)
-                time.sleep(random.uniform(2.5, 4))  # Respectful delay
+                time.sleep(random.uniform(2.5, 4))
                 
                 # Extract name
                 name_xpaths = [
@@ -668,7 +680,7 @@ def scrape_google_maps_real(keyword, location, max_results=10, extract_contact=T
                         business['Social Media Profiles'] = ' | '.join(social_links)
                         stats['social_found'] += 1
                     
-                    time.sleep(random.uniform(1, 2))  # Respectful delay
+                    time.sleep(random.uniform(1, 2))
                 else:
                     if progress_callback:
                         progress_callback(f"⊗ Step 2/2: Skipped {idx + 1}/{len(businesses)}: No website")
@@ -685,13 +697,22 @@ def scrape_google_maps_real(keyword, location, max_results=10, extract_contact=T
         error_msg = f"❌ Critical error:\n{type(e).__name__}: {str(e)}"
         log_error("CRITICAL", "Fatal error", f"{type(e).__name__}: {str(e)}")
         return pd.DataFrame(), error_msg, stats
+    
+    finally:
+        # IMPORTANT: Always quit driver to clean up resources
+        if driver:
+            try:
+                driver.quit()
+                logger.info("✅ Chrome driver closed successfully")
+            except Exception as e:
+                logger.warning(f"⚠️ Error closing driver: {str(e)}")
 
 # ============================================
 # STREAMLIT UI
 # ============================================
 
 st.title("🎯 Lead Generation Automation System")
-st.markdown("**Streamlit Cloud Optimized** | Real-time extraction with error tracking")
+st.markdown("**Production Ready** | Optimized for Streamlit Cloud & Render")
 
 st.info("📊 **2-Step Process:** Extract from Google Maps (30-60s) → Scrape websites for contact info (5-10s per business)")
 
@@ -942,7 +963,7 @@ else:
 
 # Footer
 st.divider()
-st.caption("🚀 Lead Generation System v2.1 - Streamlit Cloud Optimized")
+st.caption("🚀 Lead Generation System v3.0 - Production Ready")
 st.caption("⚡ Use responsibly | Respect rate limits and Terms of Service")
 
 # Sidebar
