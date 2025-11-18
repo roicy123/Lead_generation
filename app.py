@@ -79,37 +79,26 @@ def display_error_log():
 
 @st.cache_resource
 def get_chrome_driver():
-    """
-    Initialize Chrome driver optimized for Streamlit Cloud
-    Cached to avoid reinstalling on every rerun
-    """
+    """Initialize Chrome driver for Docker/Render deployment"""
     options = Options()
     
-    # Essential options for Streamlit Cloud
-    options.add_argument("--headless")
+    # Essential options for Docker
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--disable-features=NetworkService")
     options.add_argument("--window-size=1920x1080")
-    options.add_argument("--disable-features=VizDisplayCompositor")
-    
-    # Additional stability options
     options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument(f"user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-    
-    # Memory optimization for Cloud
+    options.add_argument("--disable-features=VizDisplayCompositor")
     options.add_argument("--single-process")
     options.add_argument("--remote-debugging-port=9222")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--ignore-certificate-errors")
+    
+    # User agent
+    options.add_argument("user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     try:
-        # Streamlit Cloud uses chromium-driver at /usr/bin/chromedriver
-        service = Service(executable_path="/usr/bin/chromedriver")
+        # For Docker/Render, chromedriver is in /usr/local/bin/
+        service = Service(executable_path="/usr/local/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=options)
         driver.set_page_load_timeout(60)
         driver.implicitly_wait(10)
@@ -117,6 +106,7 @@ def get_chrome_driver():
         return driver
     except Exception as e:
         logger.error(f"❌ Failed to initialize Chrome driver: {str(e)}")
+        st.error(f"Chrome driver initialization failed: {str(e)}")
         return None
 
 # ============================================
